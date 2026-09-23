@@ -3,16 +3,18 @@ uuid = "083b31c1-d919-4048-a4c2-219bf0ee0f63"
 version = "0.1.0"
 authors = ["Tamás K. Papp <tkpapp@gmail.com>"]
 
+[workspace]
+projects = ["test"]
+
 [deps]
 ArgCheck = "dce04be8-c92d-5529-be00-80e4d2c0e197"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 
 [compat]
 ArgCheck = "2.5.0"
 DocStringExtensions = "0.9.5"
 LinearAlgebra = "1.12.0"
+Printf = "1.11.0"
 julia = "1.12"
-
-[workspace]
-projects = ["test"]

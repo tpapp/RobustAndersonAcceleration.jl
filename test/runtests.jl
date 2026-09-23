@@ -59,6 +59,15 @@ end
     end
 end
 
+@testset "fixed point type stability and sanity checks" begin
+    # NOTE: this is not a challenging problem, we just check type stability and printing
+    fp = @inferred RAA.fixed_point(x -> 0.3 .* x, ones(3))
+    @test repr(fp) isa AbstractString # sanity check printing
+    @test fp.x ≈ zeros(3) atol = 1e-8
+    @test fp.residual ≈ zeros(3) atol = 1e-8
+    @test fp.iterations ≤ 5
+end
+
 @testset "QA with Aqua" begin
      import Aqua
      Aqua.test_all(RAA)
