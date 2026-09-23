@@ -4,7 +4,7 @@ Placeholder for a short summary about RobustAndersonAcceleration.
 module RobustAndersonAcceleration
 
 using ArgCheck: @argcheck
-using DocStringExtensions: SIGNATURES
+using DocStringExtensions: SIGNATURES, FIELDS
 using LinearAlgebra: norm, svd
 using Printf: @printf
 
@@ -60,14 +60,30 @@ function subtract_reference!(F::AbstractMatrix{T}, i::Int) where T
     (; D, c_diff = c)
 end
 
+"""
+`SVDSolver(; kwargs...)`
+
+Solve the subproblem using singular value decomposition.
+
+Works well with ill-conditioned problems.
+
+# Fields (also keyword arguments to the constructor)
+
+$(FIELDS)
+"""
 Base.@kwdef struct SVDSolver{K}
+    "Determines the relative cutoff for singular values."
     κ::K = DEFAULT_κ
 end
 
 """
-$(SIGNATURES)
+$(SIGNATURES) → (; α, diagnostics)
+
+Calculate the optimal coefficients `α` for the subproblem.
+
+Also return the `diagnostics` for the `solver`.
 """
-function optimal_coefficients(::SVDSolver, F::AbstractMatrix, i::Int)
+function optimal_coefficients(solver::SVDSolver, F::AbstractMatrix, i::Int)
     nrow, ncol = size(F)
     @argcheck ncol ≥ 2
     (; D, c_diff) = subtract_reference!(F, i)
