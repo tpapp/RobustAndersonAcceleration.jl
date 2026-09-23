@@ -16,8 +16,8 @@ end
             n = rand(2:5)
             R = randn(m, n)     # rank deficiency in random matrixes should be rare
             f = randn(m)
-            (; α, r) = RAA.svd_least_squares(R, f)
-            @test r == min(m, n)
+            (; α, revealed_rank) = RAA.svd_least_squares(R, f)
+            @test revealed_rank == min(m, n)
             @test α ≈ R \ (-f)
         end
     end
@@ -25,8 +25,8 @@ end
         R = [1 + 4*eps() 1;
              2 + 4*eps() 2]
         f = ones(2)
-        (; α, r, c_svd) = RAA.svd_least_squares(R, f)
-        @test r == 1
+        (; α, revealed_rank, c_svd) = RAA.svd_least_squares(R, f)
+        @test revealed_rank == 1
         @test c_svd == 1
     end
     @testset "inference" begin
@@ -53,7 +53,7 @@ end
 @testset "optimal coefficients perturbation test" begin
     for _ in 1:100
         F = randn(3, 3)
-        γ = RAA.optimal_coefficients(RAA.SVDSolver(), F, 3)
+        γ = RAA.optimal_coefficients(RAA.SVDSolver(), F, 3).α
         @test sum(γ) ≈ 1
         @test norm(F * γ, 2) ≤ norm(F * perturb(γ), 2)
     end

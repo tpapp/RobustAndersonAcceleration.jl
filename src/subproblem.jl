@@ -1,10 +1,17 @@
+public SVDSolver
+
+"""
+$(SIGNATURES)
+
+Shorthand for the Euclidean norm.
+"""
 norm2(x) = norm(x, 2)
 
 """
 $(SIGNATURES)
 
-Solve ``\\| R α + f \\|`` using SVD. Return `(; α, c_svd, r)` where `r` is the revealed rank
-and `c_R` is the condition number (after truncation, see below).
+Solve ``\\| R α + f \\|`` using SVD. Return `(; α, c_svd, revealed_rank)` where `c_svd`
+is the condition number (after truncation).
 
 `κ` is a relative truncation factor.
 """
@@ -15,11 +22,11 @@ function svd_least_squares(R::AbstractMatrix{T}, f; κ = 8.0) where T
     r = searchsortedlast(S, τ; rev = true)          # rank
     if isempty(S) || r == 0 || S[1] == 0
         # zero matrix, zero rank, infinite condition number: pick zero as the minimizer
-        return (; α = zeros(T, size(R, 2)), r = 0, c_svd = oftype(S[1], Inf))
+        return (; α = zeros(T, size(R, 2)), revealed_rank = 0, c_svd = oftype(S[1], Inf))
     end
     c_svd = S[1] / S[r]                 # condition number
     α = Vt[1:r, :]' * ((U[:, 1:r]' * -f) ./ S[1:r])
-    (; α, r, c_svd)
+    (; α, revealed_rank = r, c_svd)
 end
 
 function subtract_reference!(F::AbstractMatrix{T}, i::Int) where T
@@ -39,9 +46,13 @@ end
 
 struct SVDSolver end
 
+"""
+$(SIGNATURES)
+"""
 function optimal_coefficients(::SVDSolver, F::AbstractMatrix, i::Int)
     nrow, ncol = size(F)
     (; D, c_diff) = subtract_reference!(F, i)
-    (; α, r, c_svd) = svd_least_squares(D, @view(F[:, i]))
-    insert!(α, i, 1 - sum(α))
+    (; α, revealed_rank, c_svd) = svd_least_squares(D, @view(F[:, i]))
+    (α = insert!(α, i, 1 - sum(α)),
+     diagnostics = (; revealed_rank, c_diff, c_svd))
 end
