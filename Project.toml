@@ -12,7 +12,7 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 ArgCheck = "2.5.0"
 DocStringExtensions = "0.9.5"
 LinearAlgebra = "1.12.0"
-julia = "1"
+julia = "1.12"
 
 [workspace]
 projects = ["test"]

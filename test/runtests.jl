@@ -59,8 +59,7 @@ end
     end
 end
 
-## NOTE add Aqua to the test environment, then uncomment
-# @testset "QA with Aqua" begin
-#     import Aqua
-#     Aqua.test_all(RobustAndersonAcceleration)
-# end
+@testset "QA with Aqua" begin
+     import Aqua
+     Aqua.test_all(RAA)
+end
