@@ -7,6 +7,8 @@ Shorthand for the Euclidean norm.
 """
 norm2(x) = norm(x, 2)
 
+const DEFAULT_κ = 8.0
+
 """
 $(SIGNATURES)
 
@@ -15,7 +17,7 @@ is the condition number (after truncation).
 
 `κ` is a relative truncation factor.
 """
-function svd_least_squares(R::AbstractMatrix{T}, f; κ = 8.0) where T
+function svd_least_squares(R::AbstractMatrix{T}, f; κ = DEFAULT_κ) where T
     @argcheck κ > 0
     (; U, S, Vt) = svd(R)        # note specify algorithm
     τ = max(size(R)...) * eps(eltype(R)) * κ * S[1] # cutoff
@@ -44,7 +46,9 @@ function subtract_reference!(F::AbstractMatrix{T}, i::Int) where T
     (; D, c_diff = c)
 end
 
-struct SVDSolver end
+Base.@kwdef struct SVDSolver{K}
+    κ::K = DEFAULT_κ
+end
 
 """
 $(SIGNATURES)
