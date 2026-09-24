@@ -191,7 +191,7 @@ function Base.show(io::IO, fp::FixedPoint)
 end
 
 function fixed_point(f, x0::AbstractVector;
-                     solver = SVDSolver(), termination = CheckTermination(),
+                     solver = SVDSolver(), check_termination = CheckTermination(),
                      maximum_iterations = 100,
                      depth = 5)
     x = x0
@@ -210,7 +210,7 @@ function fixed_point(f, x0::AbstractVector;
             add_x_fx(buffer, x′, fx′)
             residual = fx′ .- x′
             (converged, termination,
-             convergence_metric) = termination(; previous_x = x, x = x′, residual)
+             convergence_metric) = check_termination(; previous_x = x, x = x′, residual)
             if converged
                 return FixedPoint(; iterations = j, converged,
                                   termination, convergence_metric,

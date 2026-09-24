@@ -59,6 +59,10 @@ end
     end
 end
 
+####
+#### API
+####
+
 @testset "fixed point type stability and sanity checks" begin
     # NOTE: this is not a challenging problem, we just check type stability and printing
     fp = @inferred RAA.fixed_point(x -> 0.3 .* x, ones(3))
@@ -67,6 +71,17 @@ end
     @test fp.residual ≈ zeros(3) atol = 1e-8
     @test fp.iterations ≤ 5
 end
+
+####
+#### test problems
+####
+
+include("problems.jl")
+
+####
+#### QA
+####
+
 
 @testset "QA with Aqua" begin
      import Aqua
