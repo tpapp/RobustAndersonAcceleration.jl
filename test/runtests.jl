@@ -6,6 +6,21 @@ using Test, JET, LinearAlgebra
 end
 
 ####
+#### utilities
+####
+
+@testset "norm2" begin
+    for _ in 1:100
+        x = randn(50)
+        @test RAA.norm2(x) ≈ norm(x, 2)
+    end
+    x = fill(floatmax(Float64)/4, 3) # would overflow
+    @test RAA.norm2(x) ≈ norm(x, 2)
+    x[2] *= -1
+    @test RAA.norm2(x) ≈ norm(x, 2)
+end
+
+####
 #### subproblem
 ####
 

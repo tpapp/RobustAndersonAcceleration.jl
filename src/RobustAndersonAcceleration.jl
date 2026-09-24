@@ -11,15 +11,61 @@ using Printf: @printf
 public SVDSolver, CheckTermination, FixedPoint, fixed_point
 
 ####
-#### subproblem solver
+#### utilities
 ####
+
+"""
+Maintain the invariant that the sum of accumulated values is `scale^2 * scaled_sum`.
+`scale` may be negative.
+"""
+struct AccNorm{T}
+    scale::T
+    scaled_sum::T
+end
+
+__init_norm(::Type{T}) where T = AccNorm(one(T), zero(T))
+
+function __acc_norm(acc_norm, x)
+    @argcheck isfinite(x)
+    (; scale, scaled_sum) = acc_norm
+    scaled_sum += abs2(x / scale)
+    if !isfinite(scaled_sum)
+        scale *= x
+        scaled_sum = acc_norm.scaled_sum / x / x + one(scaled_sum)
+    end
+    AccNorm(scale, scaled_sum)
+end
+
+__done_norm(acc_norm) = sqrt(acc_norm.scaled_sum) * acc_norm.scale
 
 """
 $(SIGNATURES)
 
 Shorthand for the Euclidean norm.
 """
-norm2(x) = norm(x, 2)
+function norm2(x::AbstractVector{T}) where T<:AbstractFloat
+    acc = __init_norm(T)
+    for x in x
+        acc = __acc_norm(acc, x)
+    end
+    __done_norm(acc)
+end
+
+"""
+$(SIGNATURES)
+
+Euclidean norm of the difference of two vectors.
+"""
+function norm2diff(x::AbstractVector{T}, y::AbstractVector{T}) where {T<:AbstractFloat}
+    # NOTE failure on mismatching types is deliberate
+    acc = __init_norm(T)
+    for (x, y) in zip(x, y)
+        acc = __acc_norm(acc, x - y)
+    end
+    __done_norm(acc)
+end
+
+
 
 const DEFAULT_κ = 8.0
 
