@@ -68,7 +68,8 @@ end
 @testset "optimal coefficients perturbation test" begin
     for _ in 1:100
         F = randn(3, 3)
-        γ = RAA.optimal_coefficients(RAA.SVDSolver(), F, 3).α
+        buffer = RAA.CircularBuffer(zero(F), F, rand(axes(F,2)), true)
+        γ = RAA.optimal_coefficients(RAA.SVDSolver(), buffer).α
         @test sum(γ) ≈ 1
         @test norm(F * γ, 2) ≤ norm(F * perturb(γ), 2)
     end

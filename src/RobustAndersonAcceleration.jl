@@ -65,7 +65,128 @@ function norm2diff(x::AbstractVector{T}, y::AbstractVector{T}) where {T<:Abstrac
     __done_norm(acc)
 end
 
+####
+#### circular buffer
+####
 
+"""
+Implementation of a circular buffer using matrixes. Internal, not part of the API.
+"""
+mutable struct CircularBuffer{M<:AbstractMatrix}
+    "Inputs"
+    const x::M
+    "Outputs"
+    const fx::M
+    "Index of last value in inputs"
+    i::Int
+    """
+    `true` iff `i` has been reset to `1` at least once. When `false`, only columns
+    `1:i` in `x` and `fx` are valid.
+    """
+    rollover::Bool
+end
+
+"""
+$(SIGNATURES)
+
+Construct a circular buffer of the given type `T`, for vectors of length `len`, with
+space for `depth` vectors.
+"""
+function make_circular_buffer(::Type{T}, len::Int, depth::Int) where T
+    CircularBuffer(zeros(T, len, depth), zeros(T, len, depth), 0, false)
+end
+
+"""
+$(SIGNATURES) → count
+
+Number of vectors in the buffer.
+"""
+function get_count(buffer::CircularBuffer)
+    (; x, i, rollover) = buffer
+    rollover ? size(x, 2) : i
+end
+
+"""
+$(SIGNATURES) → x, fx, i
+
+Return the input matrix, the output matrix, and the current index of the buffer. When
+the buffer has not rolled over, matrices are resized as needed.
+"""
+function get_inputs_outputs_index(buffer::CircularBuffer)
+    (; x, fx, i, rollover) = buffer
+    k = rollover ? lastindex(x, 2) : i
+    @view(x[:, 1:k]), @view(fx[:, 1:k]), i
+end
+
+"""
+$(SIGNATURES) → fx
+
+Get the output matrix.
+"""
+function get_outputs(buffer::CircularBuffer)
+    (; x, fx, i, rollover) = buffer
+    k = rollover ? lastindex(x, 2) : i
+    @view(fx[:, 1:k])
+end
+
+"""
+$(SIGNATURES) → (; D, r, residuals_diagnostics)
+
+Let `R = outputs .- input` (the residuals), then
+
+- `r` is the reference column of `R` (the last evaluation),
+- `D` is `R` with `r` subtracted, omitting the reference column,
+- `residuals_diagnostics = (; c_diff)` is the largest norm difference of the columns of
+  `R` vs the reference column `r`; small numbers are a cause for concern.
+"""
+function get_differential_residuals(buffer::CircularBuffer)
+    _x, _fx, i = get_inputs_outputs_index(buffer)
+    nrow, ncol = size(_fx)
+    T = eltype(_fx)
+    @argcheck ncol ≥ 2 "Not enough vectors in circular buffer."
+    D = similar(_fx, nrow, ncol - 1)
+    c = zero(T)
+    r_i = @view(_fx[:, i]) .- @view(_x[:, i])
+    norm_i = norm2(r_i)
+    for j in 1:(ncol-1)
+        k = j ≥ i ? j + 1 : j
+        acc_d = __init_norm(T)
+        acc_r = __init_norm(T)
+        for l in 1:nrow
+            r = _fx[l, k] - _x[l, k] # residuals
+            acc_r = __acc_norm(acc_r, r)
+            d = r - r_i[l]      # residuals minus reference
+            acc_d = __acc_norm(acc_d, d)
+            D[l, j] = d
+        end
+        c = max(c, __done_norm(acc_d) / (norm_i + __done_norm(acc_r)))
+    end
+    (; D, r = r_i, residuals_diagnostics = (; c_diff = c), i)
+end
+
+"""
+$(SIGNATURES)
+
+Add an input-output pair to the circular buffer.
+"""
+function add_x_fx(buffer::CircularBuffer, new_x, new_fx)
+    (; x, fx, i, rollover) = buffer
+    i += 1
+    if i > size(x, 2)
+        i = 1
+        if !rollover
+            buffer.rollover = true
+        end
+    end
+    buffer.i = i
+    x[:, i] .= new_x
+    fx[:, i] .= new_fx
+    nothing
+end
+
+####
+#### subproblem solver
+####
 
 const DEFAULT_κ = 8.0
 
@@ -91,21 +212,6 @@ function svd_least_squares(R::AbstractMatrix{T}, f; κ = DEFAULT_κ) where T
     (; α, revealed_rank = r, c_svd)
 end
 
-function subtract_reference!(F::AbstractMatrix{T}, i::Int) where T
-    nrow, ncol = size(F)
-    @argcheck ncol ≥ 2
-    D = similar(F, nrow, ncol - 1)
-    c = zero(T)
-    f_i = @view F[:, i]
-    norm_i = norm2(f_i)
-    for j in 1:(ncol-1)
-        k = j ≥ i ? j + 1 : j
-        D[:, j] .= F[:, k] .- f_i
-        c = max(c, norm2(@view D[:, j]) / (norm_i + norm2(@view F[:, k])))
-    end
-    (; D, c_diff = c)
-end
-
 """
 `SVDSolver(; kwargs...)`
 
@@ -125,61 +231,21 @@ end
 """
 $(SIGNATURES) → (; α, diagnostics)
 
-Calculate the optimal coefficients `α` for the subproblem.
+Calculate the optimal coefficients `α` for the subproblem, ie minimizing the Euclidean
+norm of ``residuals ⋅ α``.
 
 Also return the `diagnostics` for the `solver`.
 """
-function optimal_coefficients(solver::SVDSolver, F::AbstractMatrix, i::Int)
-    nrow, ncol = size(F)
-    @argcheck ncol ≥ 2
-    (; D, c_diff) = subtract_reference!(F, i)
-    (; α, revealed_rank, c_svd) = svd_least_squares(D, @view(F[:, i]))
+function optimal_coefficients(solver::SVDSolver, buffer)
+    (; D, r, i, residuals_diagnostics) = get_differential_residuals(buffer)
+    @argcheck !isempty(D)
+    (; α, revealed_rank, c_svd) = svd_least_squares(D, r)
     (α = insert!(α, i, 1 - sum(α)),
-     diagnostics = (; revealed_rank, c_diff, c_svd))
+     diagnostics = (; revealed_rank, c_svd, residuals_diagnostics...))
 end
 
 ####
-#### circular buffer
-####
-
-mutable struct CircularBuffer{M<:AbstractMatrix}
-    const x::M
-    const fx::M
-    i::Int
-    rollover::Bool
-end
-
-function make_circular_buffer(::Type{T}, len::Int, depth::Int) where T
-    CircularBuffer(zeros(T, len, depth), zeros(T, len, depth), 0, false)
-end
-
-function get_residuals_values_reference(buffer::CircularBuffer)
-    (; x, fx, i, rollover) = buffer
-    if rollover
-        fx .- x, fx, i
-    else
-        _fx = @view(fx[:, 1:i])
-        _fx .- @view(x[:, 1:i]), _fx, i
-    end
-end
-
-function add_x_fx(buffer::CircularBuffer, new_x, new_fx)
-    (; x, fx, i, rollover) = buffer
-    i += 1
-    if i > size(x, 2)
-        i = 1
-        if !rollover
-            buffer.rollover = true
-        end
-    end
-    buffer.i = i
-    x[:, i] .= new_x
-    fx[:, i] .= new_fx
-    nothing
-end
-
-####
-####
+#### termination
 ####
 
 Base.@kwdef struct CheckTermination
@@ -189,10 +255,10 @@ Base.@kwdef struct CheckTermination
     residual_rtol = 1e-8
 end
 
-function (ct::CheckTermination)(; previous_x, x, residual)
+function (ct::CheckTermination)(; previous_x, x, fx)
     x_norm = norm2(x)
-    residual_norm = norm2(residual)
-    d_norm = previous_x ≡ nothing ? oftype(x_norm, Inf) : norm2(x .- previous_x)
+    residual_norm = norm2diff(fx, x)
+    d_norm = previous_x ≡ nothing ? oftype(x_norm, Inf) : norm2diff(x, previous_x)
     if residual_norm ≤ ct.residual_atol
         true, :converged_absolute, residual_norm
     else
@@ -244,27 +310,25 @@ function fixed_point(f, x0::AbstractVector;
     buffer = make_circular_buffer(eltype(x0), length(x), depth)
     j = 1
     while true
-        R, G, i = get_residuals_values_reference(buffer)
-        if size(R, 2) ≤ 1
+        if get_count(buffer) ≤ 1
             x′ = f(x)
             add_x_fx(buffer, x, x′)
             x = x′
         else
-            (; α, diagnostics) = optimal_coefficients(solver, R, i)
-            x′ = G * α
+            (; α, diagnostics) = optimal_coefficients(solver, buffer)
+            x′ = get_outputs(buffer) * α
             fx′ = f(x′)
             add_x_fx(buffer, x′, fx′)
-            residual = fx′ .- x′
             (converged, termination,
-             convergence_metric) = check_termination(; previous_x = x, x = x′, residual)
+             convergence_metric) = check_termination(; previous_x = x, x = x′, fx = fx′)
             if converged
                 return FixedPoint(; iterations = j, converged,
                                   termination, convergence_metric,
-                                  x = x′, residual, diagnostics)
+                                  x = x′, residual = fx′ .- x′, diagnostics)
             elseif j == maximum_iterations
                 return FixedPoint(; iterations = j, converged = false,
                                   termination = :maximum_iterations, convergence_metric,
-                                  x = x′, residual, diagnostics)
+                                  x = x′, residual = fx′ .- x′, diagnostics)
             end
             x = x′
         end
