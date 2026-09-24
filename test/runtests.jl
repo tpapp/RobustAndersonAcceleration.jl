@@ -86,6 +86,11 @@ end
     @test fp.x ≈ zeros(3) atol = 1e-8
     @test fp.residual ≈ zeros(3) atol = 1e-8
     @test fp.iterations ≤ 5
+    @test isempty(fp.trace)
+
+    # trace
+    fp = @inferred RAA.fixed_point(x -> 0.3 .* x, ones(3); trace = true)
+    @test !isempty(fp.trace)
 end
 
 ####

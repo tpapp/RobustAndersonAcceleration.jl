@@ -287,13 +287,14 @@ function (rac::RelAbsDiff{T})(a::AbstractVector, b::AbstractVector) where T
     norm2diff(a, b) ≤ atol + rtol * max(one(T), norm2(a), norm2(b))
 end
 
-Base.@kwdef struct FixedPointResult{V,D}
+Base.@kwdef struct FixedPointResult{V,D,T}
     iterations::Int
     converged::Bool
     termination::Symbol
     x::V
     residual::V
     diagnostics::D
+    trace::T
 end
 
 function Base.show(io::IO, fp::FixedPointResult)
@@ -310,6 +311,14 @@ function Base.show(io::IO, fp::FixedPointResult)
     end
 end
 
+function _keep_trace(x′::AbstractVector{T};
+                     fx′ = Vector{T}(),
+                     α = Vector{T}(),
+                     stagnation_counter = 0,
+                     iteration) where T
+    (; x′, fx′, α, stagnation_counter, iteration)
+end
+
 """
 $(SIGNATURES)
 
@@ -321,21 +330,25 @@ function fixed_point(f, x0::AbstractVector;
                      check_stagnation = RelAbsDiff(),
                      stagnation_threshold::Int = 8,
                      maximum_iterations::Int = 100,
-                     depth::Int = 5)
+                     depth::Int = 5,
+                     trace::Bool = false)
     x = x0
     @argcheck all(isfinite, x)
     buffer = make_circular_buffer(eltype(x0), length(x), depth)
     j = 1
     stagnation_counter = 0
+    _trace = Vector{typeof(_keep_trace(x; iteration = 0))}()
     while true
         if get_count(buffer) ≤ 1
             x′ = f(x)
             add_x_fx(buffer, x, x′)
+            trace && push!(_trace, _keep_trace(x′; iteration = j))
             x = x′
         else
             (; α, diagnostics) = optimal_coefficients(solver, buffer)
             x′ = get_outputs(buffer) * α
             fx′ = f(x′)
+            trace && push!(_trace, _keep_trace(x′; fx′, α, stagnation_counter, iteration = j))
             add_x_fx(buffer, x′, fx′)
             converged = check_solution(x′, fx′)
             stagnation = check_stagnation(x, x′)
@@ -351,7 +364,7 @@ function fixed_point(f, x0::AbstractVector;
                     (stagnating ? :stagnation : :maximum_iterations)
                 return FixedPointResult(; iterations = j, converged,
                                         termination, x = x′, residual = fx′ .- x′,
-                                        diagnostics)
+                                        diagnostics, trace = _trace)
             end
             x = x′
         end
