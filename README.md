@@ -2,6 +2,7 @@
 
 ![lifecycle](https://img.shields.io/badge/lifecycle-experimental-orange.svg)
 [![build](https://github.com/tpapp/RobustAndersonAcceleration.jl/workflows/CI/badge.svg)](https://github.com/tpapp/RobustAndersonAcceleration.jl/actions?query=workflow%3ACI)
+[![codecov](https://codecov.io/gh/tpapp/RobustAndersonAcceleration.jl/graph/badge.svg?token=uiK4319RwJ)](https://codecov.io/gh/tpapp/RobustAndersonAcceleration.jl)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![](https://img.shields.io/badge/%F0%9F%9B%A9%EF%B8%8F_tested_with-JET.jl-233f9a)](https://github.com/aviatesk/JET.jl)
 <!-- Documentation -- uncomment or delete as needed -->
