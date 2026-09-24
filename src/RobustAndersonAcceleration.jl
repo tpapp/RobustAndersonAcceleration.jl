@@ -26,7 +26,7 @@ using DocStringExtensions: SIGNATURES, FIELDS
 using LinearAlgebra: norm, svd
 using Printf: @sprintf
 
-public SVDSolver, CheckTermination, fixed_point
+public SVDSolver, RelAbsDiff, fixed_point, FixedPointResult
 
 ####
 #### utilities
@@ -266,69 +266,67 @@ end
 #### termination
 ####
 
-Base.@kwdef struct CheckTermination
-    x_atol = 1e-8
-    x_rtol = 1e-8
-    residual_atol = 1e-8
-    residual_rtol = 1e-8
-end
+struct RelAbsDiff{T}
+    atol::T
+    rtol::T
+    """
+    $(SIGNATURES)
 
-function (ct::CheckTermination)(; previous_x, x, fx)
-    x_norm = norm2(x)
-    residual_norm = norm2diff(fx, x)
-    d_norm = previous_x ≡ nothing ? oftype(x_norm, Inf) : norm2diff(x, previous_x)
-    if residual_norm ≤ ct.residual_atol
-        true, :converged_absolute, residual_norm
-    else
-        relative_residual_norm = residual_norm / x_norm
-        if relative_residual_norm ≤ ct.residual_rtol
-            true, :converged_relative, relative_residual_norm
-        elseif d_norm ≤ ct.x_atol
-            true, :notmoving_absolute, d_norm
-        else
-            relative_d_norm = d_norm / x_norm
-            if relative_d_norm ≤ ct.x_rtol
-                true, :notmoving_relative, relative_d_norm
-            else
-                false, :not_converging, oftype(relative_residual_norm, NaN)
-            end
-        end
+    A callable with vector arguments `(a, b)` that evaluates to a boolean, true iff
+    ``\\| a - b \\|_2 ≤ \\max(1, \\|a\\|_2, \\|b\\|_2)
+    """
+    function RelAbsDiff(atol::T = 1e-8, rtol::T = atol) where T
+        @argcheck atol ≥ 0
+        @argcheck rtol ≥ 0
+        new{T}(atol, rtol)
     end
 end
 
-Base.@kwdef struct FixedPointResult{T,V,D}
+function (rac::RelAbsDiff{T})(a::AbstractVector, b::AbstractVector) where T
+    (; atol, rtol) = rac
+    norm2diff(a, b) ≤ atol + rtol * max(one(T), norm2(a), norm2(b))
+end
+
+Base.@kwdef struct FixedPointResult{V,D}
     iterations::Int
     converged::Bool
     termination::Symbol
-    convergence_metric::T
     x::V
     residual::V
     diagnostics::D
 end
 
 function Base.show(io::IO, fp::FixedPointResult)
-    (; iterations, converged, termination, convergence_metric, x, residual, diagnostics) = fp
+    (; iterations, converged, termination, x, residual, diagnostics) = fp
+    r_norm = @sprintf("%.2e", norm2(residual))
     if converged
-        printstyled(io, "converged after $(iterations) iterations\n",
-                    "terminated “:$(termination)” with metric ",
-                    @sprintf("%.2e", convergence_metric); color = :green)
+        printstyled(io,
+                    "converged after $(iterations) iterations with residual norm $(r_norm)";
+                    color = :green)
     else
         printstyled(io, "did not converge after $(iterations) iterations\n",
-                    "terminated “:$(termination)”, diagnostics:\n",
+                    "terminated “:$(termination)”, residual norm $(r_norm), diagnostics:\n",
                     diagnostics; color = :red)
     end
 end
 
 """
 $(SIGNATURES)
+
+FIXME document
 """
 function fixed_point(f, x0::AbstractVector;
-                     solver = SVDSolver(), check_termination = CheckTermination(),
-                     maximum_iterations = 100,
-                     depth = 5)
+                     solver = SVDSolver(),
+                     check_solution = RelAbsDiff(),
+                     check_stagnation = RelAbsDiff(),
+                     stagnation_threshold::Int = 8,
+                     maximum_iterations::Int = 100,
+                     depth::Int = 5)
     x = x0
+    @argcheck all(isfinite, x)
     buffer = make_circular_buffer(eltype(x0), length(x), depth)
     j = 1
+    stagnation_counter = 0
     while true
         if get_count(buffer) ≤ 1
             x′ = f(x)
@@ -339,16 +337,21 @@ function fixed_point(f, x0::AbstractVector;
             x′ = get_outputs(buffer) * α
             fx′ = f(x′)
             add_x_fx(buffer, x′, fx′)
-            (converged, termination,
-             convergence_metric) = check_termination(; previous_x = x, x = x′, fx = fx′)
-            if converged
+            converged = check_solution(x′, fx′)
+            stagnation = check_stagnation(x, x′)
+            if stagnation
+                stagnation_counter += 1
+            else
+                stagnation_counter = 0
+            end
+            stagnating = stagnation_counter ≥ stagnation_threshold
+            maxiter = j == maximum_iterations
+            if converged || stagnating || maxiter
+                termination = converged ? :convergence :
+                    (stagnating ? :stagnation : :maximum_iterations)
                 return FixedPointResult(; iterations = j, converged,
-                                        termination, convergence_metric,
-                                        x = x′, residual = fx′ .- x′, diagnostics)
-            elseif j == maximum_iterations
-                return FixedPointResult(; iterations = j, converged = false,
-                                        termination = :maximum_iterations, convergence_metric,
-                                        x = x′, residual = fx′ .- x′, diagnostics)
+                                        termination, x = x′, residual = fx′ .- x′,
+                                        diagnostics)
             end
             x = x′
         end
