@@ -26,3 +26,5 @@ It has the following *drawbacks*, which may or may not be relevant for you:
 2. At the moment the package does not go out of its way to minimize allocations, which are, in comparison, a trivial cost for real-world problems but obfuscate the code. This may change.
 
 3. It is not as heavily tested as more mature alternatives, which include [SpeedMapping.jl](https://github.com/NicolasL-S/SpeedMapping.jl) and [FixedPointAcceleration.jl](https://github.com/s-baumann/FixedPointAcceleration.jl).
+
+See the package docstring for documentation.

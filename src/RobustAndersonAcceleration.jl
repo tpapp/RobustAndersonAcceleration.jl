@@ -1,14 +1,32 @@
 """
-Placeholder for a short summary about RobustAndersonAcceleration.
+A robust Julia implementation of Anderson acceleration.
+
+The subproblem is solved using SVD, which makes sense for numerically challenging
+problems where the function evaluation itself is the expensive part.
+
+## Public API
+
+
+## Public API
+
+No symbols are exported. It is recommended that the user `import`s the package with an
+alias, eg
+
+```julia
+import RobustAndersonAcceleration as RAA
+```
+
+See [`fixed_point`](@ref), [`SVDSolver`](@ref), [`CheckTermination`](@ref), and
+[`FixedPointResult`](@ref).
 """
 module RobustAndersonAcceleration
 
 using ArgCheck: @argcheck
 using DocStringExtensions: SIGNATURES, FIELDS
 using LinearAlgebra: norm, svd
-using Printf: @printf
+using Printf: @sprintf
 
-public SVDSolver, CheckTermination, FixedPoint, fixed_point
+public SVDSolver, CheckTermination, fixed_point
 
 ####
 #### utilities
@@ -278,7 +296,7 @@ function (ct::CheckTermination)(; previous_x, x, fx)
     end
 end
 
-Base.@kwdef struct FixedPoint{T,V,D}
+Base.@kwdef struct FixedPointResult{T,V,D}
     iterations::Int
     converged::Bool
     termination::Symbol
@@ -288,20 +306,22 @@ Base.@kwdef struct FixedPoint{T,V,D}
     diagnostics::D
 end
 
-function Base.show(io::IO, fp::FixedPoint)
+function Base.show(io::IO, fp::FixedPointResult)
     (; iterations, converged, termination, convergence_metric, x, residual, diagnostics) = fp
-    # FIXME make this color
     if converged
-        print(io, "converged after $(iterations) iterations\n",
-              "terminated “:$(termination)” with metric ")
-        @printf(io, "%.2e", convergence_metric)
+        printstyled(io, "converged after $(iterations) iterations\n",
+                    "terminated “:$(termination)” with metric ",
+                    @sprintf("%.2e", convergence_metric); color = :green)
     else
-        print(io, "did not converge after $(iterations) iterations\n",
-              "terminated “:$(termination)”, diagnostics:\n",
-              diagnostics)
+        printstyled(io, "did not converge after $(iterations) iterations\n",
+                    "terminated “:$(termination)”, diagnostics:\n",
+                    diagnostics; color = :red)
     end
 end
 
+"""
+$(SIGNATURES)
+"""
 function fixed_point(f, x0::AbstractVector;
                      solver = SVDSolver(), check_termination = CheckTermination(),
                      maximum_iterations = 100,
@@ -322,13 +342,13 @@ function fixed_point(f, x0::AbstractVector;
             (converged, termination,
              convergence_metric) = check_termination(; previous_x = x, x = x′, fx = fx′)
             if converged
-                return FixedPoint(; iterations = j, converged,
-                                  termination, convergence_metric,
-                                  x = x′, residual = fx′ .- x′, diagnostics)
+                return FixedPointResult(; iterations = j, converged,
+                                        termination, convergence_metric,
+                                        x = x′, residual = fx′ .- x′, diagnostics)
             elseif j == maximum_iterations
-                return FixedPoint(; iterations = j, converged = false,
-                                  termination = :maximum_iterations, convergence_metric,
-                                  x = x′, residual = fx′ .- x′, diagnostics)
+                return FixedPointResult(; iterations = j, converged = false,
+                                        termination = :maximum_iterations, convergence_metric,
+                                        x = x′, residual = fx′ .- x′, diagnostics)
             end
             x = x′
         end
