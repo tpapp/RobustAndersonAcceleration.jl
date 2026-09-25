@@ -262,6 +262,17 @@ function optimal_coefficients(solver::SVDSolver, buffer)
      diagnostics = (; revealed_rank, c_svd, residuals_diagnostics...))
 end
 
+"""
+$(SIGNATURES)
+
+Return a “placeholder” diagnostics when it is not available for `solver`. For type
+stable results.
+"""
+function _placeholder_diagnostics(solver::SVDSolver, buffer)
+    nan = oftype(buffer.x[1] - buffer.fx[1], NaN)
+    (; revealed_rank = -1, c_svd = NaN, c_diff = NaN)
+end
+
 ####
 #### termination
 ####
@@ -299,15 +310,17 @@ end
 
 function Base.show(io::IO, fp::FixedPointResult)
     (; iterations, converged, termination, x, residual, diagnostics) = fp
-    r_norm = @sprintf("%.2e", norm2(residual))
+    r_norm = (isempty(residual) || !all(isfinite, residual)) ? "n/a" : @sprintf("%.2e", norm2(residual))
     if converged
         printstyled(io,
                     "converged after $(iterations) iterations with residual norm $(r_norm)";
                     color = :green)
     else
         printstyled(io, "did not converge after $(iterations) iterations\n",
-                    "terminated “:$(termination)”, residual norm $(r_norm), diagnostics:\n",
-                    diagnostics; color = :red)
+                    "terminated “:$(termination)”, residual norm $(r_norm)"; color = :red)
+        if termination ≠ :error && termination ≠ :nonfinite
+            printstyled(io, "\ndiagnostics: ", diagnostics; color = :red)
+        end
     end
 end
 
@@ -315,14 +328,39 @@ function _keep_trace(x′::AbstractVector{T};
                      fx′ = Vector{T}(),
                      α = Vector{T}(),
                      stagnation_counter = 0,
-                     iteration) where T
-    (; x′, fx′, α, stagnation_counter, iteration)
+                     iteration,
+                     diagnostics) where T
+    (; x′, fx′, α, stagnation_counter, iteration, diagnostics)
 end
 
 """
 $(SIGNATURES)
 
-FIXME document
+Return `nothing` when `f(x)` errors, otherwise its return value.
+"""
+function _squash_error(f, x)
+    try
+        f(x)
+    catch
+        nothing
+    end
+end
+
+"""
+$(SIGNATURES)
+
+Find the fixed point ``x = f(x)`` using an Anderson acceleration algorithm.
+
+# Keyword arguments
+
+- `solver = SVDSolver()` is used for solving the subproblem.
+
+- `check_solutions = RelAbsDiff()` is called with inputs (`x`) and outputs (`f(x)`) and
+  should return a `Bool` indicating whether `x` is accepted as a solution.
+
+- `check_stagnation = RelAbsDiff()` is called with consecutive pairs of `x` values, to
+  check stagnation of the solver. Stagnation is declared when this returns `true` more
+  than `stagnation_threshold` times.
 """
 function fixed_point(f, x0::AbstractVector;
                      solver = SVDSolver(),
@@ -337,18 +375,38 @@ function fixed_point(f, x0::AbstractVector;
     buffer = make_circular_buffer(eltype(x0), length(x), depth)
     j = 1
     stagnation_counter = 0
-    _trace = Vector{typeof(_keep_trace(x; iteration = 0))}()
+    _dummy_diagnostics = _placeholder_diagnostics(solver, buffer)
+    _trace = Vector{typeof(_keep_trace(x; iteration = 0, diagnostics = _dummy_diagnostics))}()
+    _error_result(j, x) = FixedPointResult(; iterations = j, converged = false,
+                                           termination = :error, x = x,
+                                           residual = similar(x, 0),
+                                           diagnostics = _dummy_diagnostics,
+                                           trace = _trace)
+    _nonfinite_result(j, x, fx) = FixedPointResult(; iterations = j, converged = false,
+                                                   termination = :nonfinite, x = x,
+                                                   residual = fx .- x,
+                                                   diagnostics = _dummy_diagnostics,
+                                                   trace = _trace)
     while true
         if get_count(buffer) ≤ 1
-            x′ = f(x)
+            x′ = _squash_error(f, x)
+            x′ ≡ nothing && return _error_result(j, x)
+            all(isfinite, x′) || return _nonfinite_result(j, x, x′)
             add_x_fx(buffer, x, x′)
-            trace && push!(_trace, _keep_trace(x′; iteration = j))
+            if trace
+                push!(_trace,
+                      _keep_trace(x′; iteration = j, diagnostics = _dummy_diagnostics))
+            end
             x = x′
         else
             (; α, diagnostics) = optimal_coefficients(solver, buffer)
             x′ = get_outputs(buffer) * α
-            fx′ = f(x′)
-            trace && push!(_trace, _keep_trace(x′; fx′, α, stagnation_counter, iteration = j))
+            fx′ = _squash_error(f, x′)
+            fx′ ≡ nothing && return _error_result(j, x′)
+            all(isfinite, fx′) || return _nonfinite_result(j, x′, fx′)
+            if trace
+                push!(_trace, _keep_trace(x′; fx′, α, stagnation_counter, iteration = j, diagnostics))
+            end
             add_x_fx(buffer, x′, fx′)
             converged = check_solution(x′, fx′)
             stagnation = check_stagnation(x, x′)

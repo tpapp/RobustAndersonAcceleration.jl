@@ -91,6 +91,19 @@ end
     # trace
     fp = @inferred RAA.fixed_point(x -> 0.3 .* x, ones(3); trace = true)
     @test !isempty(fp.trace)
+
+    x0 = ones(3)
+    fp_err = @inferred RAA.fixed_point(_ -> error("baad"), x0)
+    @test fp_err.termination == :error
+    @test fp_err.x == x0
+
+    x_inf = [NaN, Inf, 7.0]
+    fp_inf = let x_inf = x_inf
+        @inferred RAA.fixed_point(_ -> x_inf, x0)
+    end
+    @test fp_inf.termination == :nonfinite
+    @test fp_inf.x == x0
+    @test isequal(fp_inf.residual, x_inf .- x0)
 end
 
 ####
