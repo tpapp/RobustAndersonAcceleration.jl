@@ -225,7 +225,7 @@ function svd_least_squares(R::AbstractMatrix{T}, f; κ = DEFAULT_κ) where T
         # zero matrix, zero rank, infinite condition number: pick zero as the minimizer
         return (; α = zeros(T, size(R, 2)), revealed_rank = 0, c_svd = oftype(S[1], Inf))
     end
-    c_svd = S[1] / S[r]                 # condition number
+    c_svd = S[r] / S[1]                 # condition number
     α = Vt[1:r, :]' * ((U[:, 1:r]' * -f) ./ S[1:r])
     (; α, revealed_rank = r, c_svd)
 end
@@ -240,6 +240,16 @@ Works well with ill-conditioned problems.
 # Fields (also keyword arguments to the constructor)
 
 $(FIELDS)
+
+# Diagnostics
+
+- `revealed_rank`: the rank kept after the cutoff.
+
+- `c_svd`: condition number, ratio of the smallest and the largest singular value *after*
+  the rank cutoff. Small values indicate ill-conditioning.
+
+- `c_diff`: condition number of the residuals relative to the last residual. Small
+  values indicate ill-conditioning.
 """
 Base.@kwdef struct SVDSolver{K}
     "Determines the relative cutoff for singular values."
@@ -298,6 +308,9 @@ function (rac::RelAbsDiff{T})(a::AbstractVector, b::AbstractVector) where T
     norm2diff(a, b) ≤ atol + rtol * max(one(T), norm2(a), norm2(b))
 end
 
+"""
+The value returned by [`fixed_point`](@ref), see its documentation there.
+"""
 Base.@kwdef struct FixedPointResult{V,D,T}
     iterations::Int
     converged::Bool
@@ -355,6 +368,10 @@ $(SIGNATURES)
 
 Find the fixed point ``x = f(x)`` using an Anderson acceleration algorithm.
 
+Throws an error when the input and output vector lengths do no match, but catches
+non-finite values and errors in `f` with termination `:nonfinite` and `:error`,
+respectively.
+
 # Keyword arguments
 
 - `solver = SVDSolver()` is used for solving the subproblem.
@@ -363,8 +380,38 @@ Find the fixed point ``x = f(x)`` using an Anderson acceleration algorithm.
   should return a `Bool` indicating whether `x` is accepted as a solution.
 
 - `check_stagnation = RelAbsDiff()` is called with consecutive pairs of `x` values, to
-  check stagnation of the solver. Stagnation is declared when this returns `true` more
-  than `stagnation_threshold` times.
+  check stagnation of the solver. Terminate with `:stagnation` when this returns `true`
+  more than `stagnation_threshold` times.
+
+- `stagnation_threshold::Int = 8`: see above.
+
+- `maximum_iterations::Int = 100`: after this many iterations, terminate with
+  `:maximum_iterations`.
+
+- `depth::Int = 5`: how many of the past iterations to use for the new value.
+
+- `trace::Bool = false`: when `true`, the `trace` vector keeps iterations and diagnostic
+  information as `NamedTuple`s. When `false`, this is empty. The format of this vector
+  is not part of the API and may change with minor versions.
+
+# Return value
+
+A `FixedPointResult` structure with the following fields:
+
+- `iterations::Int`: the number of times the function was evaluated.
+
+- `converged::Bool`: `true` iff convergence was declared according to `check_solution`.
+
+- `termination::Symbol`: the reason for termination, one of `:convergence`,
+  `:stagnation`, `:maximum_iterations`, `:error`, `:nonfinite`.
+
+- `x`: the fixed point, if `converged`, otherwise the last value.
+
+- `residual`: `f(x) - x`.
+
+- `diagnostics`: diagnostics, as returned by the `solver`. See [`SVDSolver`](@ref).
+
+- `trace`: see the `trace` keyword above.
 """
 function fixed_point(f, x0::AbstractVector;
                      solver = SVDSolver(),
