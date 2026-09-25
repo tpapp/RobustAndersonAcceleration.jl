@@ -337,13 +337,17 @@ end
 $(SIGNATURES)
 
 Return `nothing` when `f(x)` errors, otherwise its return value.
+
+Checks input and output lengths and throws an error if there is a mismatch.
 """
 function _call_wrapper(f, x)
-    try
+    fx = try
         f(x)
     catch
         nothing
     end
+    fx ≢ nothing && @argcheck length(x) == length(fx)
+    fx
 end
 
 """
@@ -391,7 +395,6 @@ function fixed_point(f, x0::AbstractVector;
         if get_count(buffer) ≤ 1
             x′ = _call_wrapper(f, x)
             x′ ≡ nothing && return _error_result(j, x)
-            @argcheck length(x) == length(x′) "Mismatch between input and output length."
             all(isfinite, x′) || return _nonfinite_result(j, x, x′)
             add_x_fx(buffer, x, x′)
             if trace
@@ -404,7 +407,6 @@ function fixed_point(f, x0::AbstractVector;
             x′ = get_outputs(buffer) * α
             fx′ = _call_wrapper(f, x′)
             fx′ ≡ nothing && return _error_result(j, x′)
-            @argcheck length(x′) == length(fx′) "Mismatch between input and output length."
             all(isfinite, fx′) || return _nonfinite_result(j, x′, fx′)
             if trace
                 push!(_trace, _keep_trace(x′; fx′, α, stagnation_counter, iteration = j, diagnostics))
