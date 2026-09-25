@@ -104,6 +104,8 @@ end
     @test fp_inf.termination == :nonfinite
     @test fp_inf.x == x0
     @test isequal(fp_inf.residual, x_inf .- x0)
+
+    @test_throws ArgumentError RAA.fixed_point(x -> push!(copy(x), x[1]), ones(3))
 end
 
 ####

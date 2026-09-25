@@ -338,7 +338,7 @@ $(SIGNATURES)
 
 Return `nothing` when `f(x)` errors, otherwise its return value.
 """
-function _squash_error(f, x)
+function _call_wrapper(f, x)
     try
         f(x)
     catch
@@ -389,8 +389,9 @@ function fixed_point(f, x0::AbstractVector;
                                                    trace = _trace)
     while true
         if get_count(buffer) ≤ 1
-            x′ = _squash_error(f, x)
+            x′ = _call_wrapper(f, x)
             x′ ≡ nothing && return _error_result(j, x)
+            @argcheck length(x) == length(x′) "Mismatch between input and output length."
             all(isfinite, x′) || return _nonfinite_result(j, x, x′)
             add_x_fx(buffer, x, x′)
             if trace
@@ -401,8 +402,9 @@ function fixed_point(f, x0::AbstractVector;
         else
             (; α, diagnostics) = optimal_coefficients(solver, buffer)
             x′ = get_outputs(buffer) * α
-            fx′ = _squash_error(f, x′)
+            fx′ = _call_wrapper(f, x′)
             fx′ ≡ nothing && return _error_result(j, x′)
+            @argcheck length(x′) == length(fx′) "Mismatch between input and output length."
             all(isfinite, fx′) || return _nonfinite_result(j, x′, fx′)
             if trace
                 push!(_trace, _keep_trace(x′; fx′, α, stagnation_counter, iteration = j, diagnostics))
