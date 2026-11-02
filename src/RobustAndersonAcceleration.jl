@@ -323,7 +323,8 @@ end
 
 function Base.show(io::IO, fp::FixedPointResult)
     (; iterations, converged, termination, x, residual, diagnostics) = fp
-    r_norm = (isempty(residual) || !all(isfinite, residual)) ? "n/a" : @sprintf("%.2e", norm2(residual))
+    r_norm = (isempty(residual) || !all(isfinite, residual)) ?
+        "n/a" : @sprintf("%.2e", norm2(residual))
     if converged
         printstyled(io,
                     "converged after $(iterations) iterations with residual norm $(r_norm)";
@@ -469,8 +470,8 @@ function fixed_point(f, x0::AbstractVector;
             stagnating = stagnation_counter ≥ stagnation_threshold
             maxiter = j == maximum_iterations
             if converged || stagnating || maxiter
-                termination = converged ? :convergence :
-                    (stagnating ? :stagnation : :maximum_iterations)
+                termination = (converged ? :convergence :
+                    (stagnating ? :stagnation : :maximum_iterations))
                 return FixedPointResult(; iterations = j, converged,
                                         termination, x = x′, residual = fx′ .- x′,
                                         diagnostics, trace = _trace)
