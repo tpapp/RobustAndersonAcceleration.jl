@@ -332,7 +332,7 @@ function Base.show(io::IO, fp::FixedPointResult)
     else
         printstyled(io, "did not converge after $(iterations) iterations\n",
                     "terminated “:$(termination)”, residual norm $(r_norm)"; color = :red)
-        if termination ≠ :error && termination ≠ :nonfinite
+        if termination ≠ :nonfinite
             printstyled(io, "\ndiagnostics: ", diagnostics; color = :red)
         end
     end
@@ -350,18 +350,16 @@ end
 """
 $(SIGNATURES)
 
-Return `nothing` when `f(x)` errors, otherwise its return value.
-
 Checks input and output lengths and throws an error if there is a mismatch.
 """
-function _call_wrapper(f, x)
-    fx = try
-        f(x)
-    catch
-        nothing
+function _call_wrapper(f, x::T) where {T<:AbstractVector}
+    fx = f(x)
+    @argcheck length(x) == length(fx) DimensionMismatch("input and output lengths differ.")
+    if fx isa T
+        fx
+    else
+        convert(T, fx)::T
     end
-    fx ≢ nothing && @argcheck length(x) == length(fx)
-    fx
 end
 
 """
@@ -370,8 +368,7 @@ $(SIGNATURES)
 Find the fixed point ``x = f(x)`` using an Anderson acceleration algorithm.
 
 Throws an error when the input and output vector lengths do no match, but catches
-non-finite values and errors in `f` with termination `:nonfinite` and `:error`,
-respectively.
+non-finite values with termination `:nonfinite`.
 
 # Keyword arguments
 
@@ -404,7 +401,7 @@ A `FixedPointResult` structure with the following fields:
 - `converged::Bool`: `true` iff convergence was declared according to `check_solution`.
 
 - `termination::Symbol`: the reason for termination, one of `:convergence`,
-  `:stagnation`, `:maximum_iterations`, `:error`, `:nonfinite`.
+  `:stagnation`, `:maximum_iterations`, `:nonfinite`.
 
 - `x`: the fixed point, if `converged`, otherwise the last value.
 
@@ -429,11 +426,6 @@ function fixed_point(f, x0::AbstractVector;
     stagnation_counter = 0
     _dummy_diagnostics = _placeholder_diagnostics(solver, buffer)
     _trace = Vector{typeof(_keep_trace(x; iteration = 0, diagnostics = _dummy_diagnostics))}()
-    _error_result(j, x) = FixedPointResult(; iterations = j, converged = false,
-                                           termination = :error, x = x,
-                                           residual = similar(x, 0),
-                                           diagnostics = _dummy_diagnostics,
-                                           trace = _trace)
     _nonfinite_result(j, x, fx) = FixedPointResult(; iterations = j, converged = false,
                                                    termination = :nonfinite, x = x,
                                                    residual = fx .- x,
@@ -442,7 +434,6 @@ function fixed_point(f, x0::AbstractVector;
     while true
         if get_count(buffer) ≤ 1
             x′ = _call_wrapper(f, x)
-            x′ ≡ nothing && return _error_result(j, x)
             all(isfinite, x′) || return _nonfinite_result(j, x, x′)
             add_x_fx(buffer, x, x′)
             if trace
@@ -454,7 +445,6 @@ function fixed_point(f, x0::AbstractVector;
             (; α, diagnostics) = optimal_coefficients(solver, buffer)
             x′ = get_outputs(buffer) * α
             fx′ = _call_wrapper(f, x′)
-            fx′ ≡ nothing && return _error_result(j, x′)
             all(isfinite, fx′) || return _nonfinite_result(j, x′, fx′)
             if trace
                 push!(_trace, _keep_trace(x′; fx′, α, stagnation_counter, iteration = j, diagnostics))
